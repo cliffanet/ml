@@ -2,6 +2,7 @@ package ML::Struct;
 
 use strict;
 use warnings;
+use base 'ML::Struct::Symb';
 
 sub new {
     my ($class, $src) = @_;
@@ -10,21 +11,14 @@ sub new {
         $src = '';
     }
 
-    my $root = {
-        type    => 'root',
-        content => '',
-        beg     => { line => 1, pos => 0 },
-        inner   => [],
-    };
-
-    my $self = {
-        src     => $src,
-        root    => $root
-    };
-
-    my %p = _parse($root, $src, dst => $root->{inner});
-
+    my $self = {};
     bless $self, $class;
+
+    $self->symb_init($src) || return $self;
+
+    #if (my $root = $self->parse_root) {
+    #    $self->{root} = $root;
+    #}
 
     return $self;
 }
@@ -32,38 +26,20 @@ sub new {
 sub err {
     my $self = shift;
 
-    return %{ $self->{err} || {} };
-}
-
-=pod
-sub _err {
-    my $s = shift;
-
     if (@_) {
-        $s = sprintf $s, @_;
+        my $s = shift;
+
+        if (@_) {
+            $s = sprintf $s, @_;
+        }
+
+        $self->{err} = $s;
+        return 0;
     }
 
-    $self->{err} = {
-        line    => $self->{line},
-        pos     => $self->{pos},
-        text    => $s,
-    };
-}
-=cut
+    exists( $self->{err} ) || return;
 
-sub _parse {
-    my ($ctx, $src, $dst) = @_;
-
-    return
-        $src =~ /^if[^a-zA-Z0-9]/ ?
-            _parse_if(@_) :
-            (
-
-            );
-}
-
-sub _parse_if {
-    my ($ctx, $src, $dst) = @_;
+    return sprintf('[row: %d, pos: %d] %s', $self->{row}, $self->{pos}, $self->{err});
 }
 
 1;

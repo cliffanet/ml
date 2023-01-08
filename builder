@@ -36,10 +36,10 @@ else {
 
 my $bld = ML::Struct->new($src);
 
-if (my %p = $bld->err()) {
-    print STDERR '>> [line: '.$p{line}.', pos: '.$p{pos}.'] '.$p{text}."\n";
+if (my $err = $bld->err()) {
+    print STDERR '>> '.$err."\n";
     exit -1;
 }
 
 use Data::Dumper;
-print Dumper $bld->{root};
+print Dumper $bld->{symb};
