@@ -13,7 +13,7 @@ sub symb_init {
     delete $self->{symb};
     delete $self->{err};
 
-    my $symb = $self->symb_root() || return;
+    my $symb = $self->symb_inner() || return;
     $self->{symb} = $symb;
 
     return 1;
@@ -35,226 +35,198 @@ sub incpos {
     }
 }
 
-sub skipspace {
+sub symbdef {
     my $self = shift;
+    my $type = shift;
+    my $str = shift;
 
-    return '' if $self->{src} !~ s/^(\s+)//;
-
-    my $s = $1;
-    $self->incpos($s);
-
-    return $s;
-}
-
-sub skipsym {
-    my $self = shift;
-    my $len = shift() || return;
-
-    my $s = substr($self->{src}, 0, $len);
-
-    substr($self->{src}, 0, $len) = '';
-    $self->incpos($s);
-
-    return $s;
-}
-
-sub nextsym {
-    my $self = shift;
-
-    my $type =
-        $self->{src} =~ /^([a-zA-Z_][a-zA-Z0-9_]*)/ ?
-            'name' :
-        $self->{src} =~ /^([\<\{\[\(])/ ?
-            'blockbeg' :
-        $self->{src} =~ /^([\>\}\]\)])/ ?
-            'blockend' :
-        $self->{src} =~ /^([\'\"\`])/ ?
-            'quote' :
-        $self->{src} =~ /^([0-9]*\.[0-9]+)([^a-zA-Z_]|$)/ ?
-            'digfloat' :
-        $self->{src} =~ /^([0-9]+)([^a-zA-Z_]|$)/ ?
-            'digdec' :
-        $self->{src} =~ /^(0x[0-9a-fA-F]+)([^a-zA-Z_]|$)/ ?
-            'dighex' :
-        $self->{src} =~ /^([01]+b)([^a-zA-Z_]|$)/ ?
-            'digbin' :
-        $self->{src} =~ /^(;)/ ?
-            'term' :
-        $self->{src} =~ /^([\=\!]\=|[\>\<]\=?)([^|!\#\$\%\^\&\*\~\:\\\/\?\=\-]|$)/ ?
-            'opcomp' :
-        $self->{src} =~ /^(([\+\-\*\/\%\^\&\|]|\&\&|\|\|)?\=)([^|!\#\$\%\^\&\*\~\:\\\/\?\=\-]|$)/ ?
-            'opset' :
-        $self->{src} =~ /^([!\~])([^|!\#\$\%\^\&\*\~\:\\\/\?\=\-]|$)/ ?
-            'opunary' :
-        $self->{src} =~ /^(\,)/ ?
-            'comma' :
-        $self->{src} =~ /^(\.)/ ?
-            'dot' :
-        $self->{src} =~ /^(\?)/ ?
-            'what' :
-        $self->{src} =~ /^(\:)/ ?
-            'colon' :
-            '';
-    
-    $type || return $self->err('Unknow symbol');
-    my $s = $1;
-
-    return
+    my @r = (
         type    => $type,
-        str     => $s;
+        str     => $str,
+        row     => $self->{row},
+        col     => $self->{col},
+        @_,
+    );
+    $self->incpos($str);
+
+    return @r;
 }
 
-sub symb_root {
+sub symb_inner {
     my $self = shift;
-
-    $self->skipspace();
+    my ($beg, $end) = @_;
 
     my @symb = ();
 
     while ($self->{src} ne '') {
-        my %n = $self->nextsym();
-        %n || return;
-
-        if ($n{type} eq 'blockbeg') {
-            my $el = $self->symb_block(%n) || return;
-            push @symb, $el;
-        }
-        elsif ($n{type} eq 'blockend') {
-            return $self->err('Unexpected block end');
-        }
-        elsif ($n{type} eq 'quote') {
-            my $el = $self->symb_quote(%n) || return;
-            push @symb, $el;
-        }
-        else {
-            push @symb, {
-                row => $self->{row},
-                col => $self->{col},
-                %n
-            };
-            $self->skipsym(length $n{str});
+        if ($end && (substr($self->{src}, 0, length($end)) eq $end)) {
+            substr($self->{src}, 0, length($end)) = '';
+            return [@symb];
         }
 
-        $self->skipspace();
+        my $s = { $self->symb() };
+        $s->{type} || return;
+
+        if ($s->{type} ne 'space') {
+            push @symb, $s;
+        }
+    }
+
+    if ($beg) {
+        $self->err('Unexpected end of block, beginned at: row=%d, col=%s, symb=%s', $beg->{row}, $beg->{col}, $beg->{str});
     }
 
     return [@symb];
 }
 
-sub symb_block {
+sub symb {
     my $self = shift;
-    my %n = @_;
 
-    my $beg = {
-        symb => $n{str},
-        row => $self->{row},
-        col => $self->{col},
-    };
-    my $symend =
-        $n{str} eq '{' ? '}' :
-        $n{str} eq '(' ? ')' :
-        $n{str} eq '<' ? '>' :
-        $n{str} eq '[' ? ']' : '';
-    
-    $symend || return $self->err('Unknown block type');
+    if ($self->{src} =~ s/^(\s+)//) {
+        return $self->symbdef(space => $1);
+    }
+    elsif ($self->{src} =~ s/^([a-zA-Z_][a-zA-Z0-9_]*)//) {
+        return $self->symbdef(name => $1);
+    }
+    elsif ($self->{src} =~ /^\.?\d/) {
+        return $self->symb_dig();
+    }
+    elsif ($self->{src} =~ /^[\=\!\>\<\+\-\*\/\%\^\&\|\~]/) {
+        return $self->symb_op();
+    }
+    elsif ($self->{src} =~ s/^(\:)//) {
+        return $self->symbdef(colon => $1);
+    }
+    elsif ($self->{src} =~ s/^(\,)//) {
+        return $self->symbdef(comma => $1);
+    }
+    elsif ($self->{src} =~ s/^(\?)//) {
+        return $self->symbdef(what => $1);
+    }
+    elsif ($self->{src} =~ s/^(\;)//) {
+        return $self->symbdef(term => $1);
+    }
+    elsif ($self->{src} =~ s/^([\'\"\`])//) {
+        return $self->symb_quote($1);
+    }
+    elsif ($self->{src} =~ s/^([\<\{\[\(])//) {
+        my $beg = $1;
+        my $end = 
+            $beg eq '{' ? '}' :
+            $beg eq '(' ? ')' :
+            $beg eq '<' ? '>' :
+            $beg eq '[' ? ']' : '';
+        my @def = $self->symbdef(block => $beg);
+        my $symb = $self->symb_inner({@def}, $end) || return;
 
-    $self->skipsym(length $n{str});
-    $self->skipspace();
-
-    my @symb = ();
-
-    while ($self->{src} ne '') {
-        my %n = $self->nextsym();
-        %n || return;
-
-        if ($n{type} eq 'blockbeg') {
-            my $el = $self->symb_block(%n) || return;
-            push @symb, $el;
-        }
-        elsif ($n{type} eq 'blockend') {
-            if ($n{str} eq $symend) {
-                my $end = {
-                    symb => $n{str},
-                    row => $self->{row},
-                    col => $self->{col},
-                };
-                $self->skipsym(length $n{str});
-
-                return {
-                    type    => 'block',
-                    beg     => $beg,
-                    end     => $end,
-                    symb    => [@symb],
-                };
-            }
-
-            return $self->err('Unexpected block end');
-        }
-        elsif ($n{type} eq 'quote') {
-            my $el = $self->symb_quote(%n) || return;
-            push @symb, $el;
-        }
-        else {
-            push @symb, {
-                row => $self->{row},
-                col => $self->{col},
-                %n
-            };
-            $self->skipsym(length $n{str});
-        }
-
-        $self->skipspace();
+        return
+            @def,
+            beg => $beg,
+            end => $end,
+            symb=> $symb;
     }
 
-    return $self->err('Unexpected end of block, beginned at: row=%d, col=%s', $beg->{row}, $beg->{col});
+    my $s = substr($self->{src}, 0, 10);
+    
+    return $self->err('Unknow symbol: %s...', $s);
+}
+
+sub symb_dig {
+    my $self = shift;
+
+    my @r;
+    if ($self->{src} =~ s/^(0x[\da-fA-F]+)//) {
+        @r = $self->symbdef(dighex => $1);
+    }
+    elsif ($self->{src} =~ s/^([01]+b)//) {
+        @r = $self->symbdef(digbin => $1);
+    }
+    elsif ($self->{src} =~ s/^(\d*(\.\d+)?)//) {
+        my $type = $2 ? 'float' : 'digint';
+        @r = $self->symbdef($type => $1);
+    }
+    else {
+        return $self->err('Unknow dig symbol');
+    }
+
+    if ($self->{src} =~ /^[a-zA-Z\_]/) {
+        return $self->err('Unknow symbol after digits');
+    }
+
+    return @r;
+}
+
+sub symb_op {
+    my $self = shift;
+
+    my @r;
+    if ($self->{src} =~ s/^([\!\=]=)//) {
+        @r = $self->symbdef(opeq => $1);
+    }
+    elsif ($self->{src} =~ s/^([\<\>]=?)//) {
+        @r = $self->symbdef(opcmp => $1);
+    }
+    elsif ($self->{src} =~ s/^([\-\+\*\/]?=)//) {
+        @r = $self->symbdef(opset => $1);
+    }
+    elsif ($self->{src} =~ s/^(\+\+|\-\-|[\-\+\*\/])//) {
+        @r = $self->symbdef(opint => $1);
+    }
+    else {
+        return $self->err('Unknow op symbol');
+    }
+
+    if ($self->{src} =~ /^[\=\!\>\<\+\-\*\/\%\^\&\|\~]/) {
+        return $self->err('Unknow symbol after operation');
+    }
+
+    return @r;
 }
 
 sub symb_quote {
     my $self = shift;
-    my %n = @_;
+    my $q = shift() || return;
 
-    my $beg = {
-        symb => $n{str},
-        row => $self->{row},
-        col => $self->{col},
-    };
-    my $symend = $n{str};
-    $self->skipsym(length $n{str});
+    my $row = $self->{row};
+    my $col = $self->{col};
+    my $str = '';
 
-    my @symb = ();
-    my $static = '';
+    $self->incpos($q);
 
     while ($self->{src} ne '') {
-        if (substr($self->{src}, 0, length $symend) eq $symend) {
-            push @symb, $static;
-            my $end = {
-                symb => $symend,
-                row => $self->{row},
-                col => $self->{col},
-            };
-            $self->skipsym(length $symend);
+        if (substr($self->{src}, 0, length($q)) eq $q) {
+            substr($self->{src}, 0, length($q)) = '';
+            $self->incpos($q);
 
-            return {
+            return
                 type    => 'str',
-                beg     => $beg,
-                end     => $end,
-                symb    => [@symb],
-            };
+                str     => $str,
+                quote   => $q,
+                row     => $row,
+                col     => $col;
         }
         elsif (
                 (length($self->{src}) >= 2) &&
                 (substr($self->{src}, 0, 1) eq '\\') &&
-                (substr($self->{src}, 1, length $symend) eq $symend)
+                (substr($self->{src}, 1, length($q)) eq $q)
             ) {
-            $static .= $symend;
-            $self->skipsym(1 + length($symend));
+            $str .= $q;
+            $self->incpos(substr($self->{src}, 0, 1 + length($q)));
+            substr($self->{src}, 0, 1 + length($q)) = '';
+        }
+        elsif ($self->{src} =~ s/^(\s+)//) {
+            $str .= $1;
+            $self->incpos($1);
         }
         else {
-            $static .= $self->skipsym(1);
+            my $s = substr($self->{src}, 0, 1);
+            substr($self->{src}, 0, 1) = '';
+            $self->incpos($s);
+            $str .= $s;
         }
     }
 
-    return $self->err('Unexpected end of quote, beginned at: row=%d, col=%s', $beg->{row}, $beg->{col});
+    return $self->err('Unexpected end of quote, beginned at: row=%d, col=%s', $row, $col);
 }
 
 1;

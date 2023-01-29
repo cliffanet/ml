@@ -34,12 +34,12 @@ sub err {
         }
 
         $self->{err} = $s;
-        return 0;
+        return;
     }
 
     exists( $self->{err} ) || return;
 
-    return sprintf('[row: %d, pos: %d] %s', $self->{row}, $self->{pos}, $self->{err});
+    return sprintf('[row: %d, col: %d] %s', $self->{row}, $self->{col}, $self->{err});
 }
 
 1;
