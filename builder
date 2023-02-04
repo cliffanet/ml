@@ -34,12 +34,12 @@ else {
     exit -1;
 }
 
-my $bld = ML::Struct->new($src);
+my @obj = ML::Struct->parse($src);
 
-if (my $err = $bld->err()) {
+if (my $err = ML::Struct->err()) {
     print STDERR '>> '.$err."\n";
     exit -1;
 }
 
 use Data::Dumper;
-print Dumper $bld->{symb};
+print Dumper \@obj;

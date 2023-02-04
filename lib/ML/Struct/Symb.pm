@@ -3,7 +3,47 @@ package ML::Struct::Symb;
 use strict;
 use warnings;
 
-sub symb_init {
+my $err;
+
+sub parse {
+    shift() if $_[0] && ($_[0] eq __PACKAGE__);
+    
+    undef $err;
+
+    my $self = {};
+    bless $self, __PACKAGE__;
+
+    my $symb = $self->init(@_);
+    if (!$symb) {
+        $err = $self->err();
+        return;
+    }
+
+    return @$symb;
+}
+
+sub err {
+    return $err if !@_ || !ref($_[0]);
+
+    my $self = shift;
+
+    if (@_) {
+        my $s = shift;
+
+        if (@_) {
+            $s = sprintf $s, @_;
+        }
+
+        $self->{err} = $s;
+        return;
+    }
+
+    exists( $self->{err} ) || return;
+
+    return sprintf('[row: %d, col: %d] %s', $self->{row}, $self->{col}, $self->{err});
+}
+
+sub init {
     my $self = shift;
     my $src = shift;
     
@@ -13,10 +53,8 @@ sub symb_init {
     delete $self->{symb};
     delete $self->{err};
 
-    my $symb = $self->symb_inner() || return;
-    $self->{symb} = $symb;
-
-    return 1;
+    my $symb = $self->inner() || return;
+    return $self->{symb} = $symb;
 }
 
 sub incpos {
@@ -35,7 +73,7 @@ sub incpos {
     }
 }
 
-sub symbdef {
+sub elem {
     my $self = shift;
     my $type = shift;
     my $str = shift;
@@ -52,7 +90,7 @@ sub symbdef {
     return @r;
 }
 
-sub symb_inner {
+sub inner {
     my $self = shift;
     my ($beg, $end) = @_;
 
@@ -83,31 +121,31 @@ sub symb {
     my $self = shift;
 
     if ($self->{src} =~ s/^(\s+)//) {
-        return $self->symbdef(space => $1);
+        return $self->elem(space => $1);
     }
     elsif ($self->{src} =~ s/^([a-zA-Z_][a-zA-Z0-9_]*)//) {
-        return $self->symbdef(name => $1);
+        return $self->elem(name => $1);
     }
     elsif ($self->{src} =~ /^\.?\d/) {
-        return $self->symb_dig();
+        return $self->dig();
     }
     elsif ($self->{src} =~ /^[\=\!\>\<\+\-\*\/\%\^\&\|\~]/) {
-        return $self->symb_op();
+        return $self->op();
     }
     elsif ($self->{src} =~ s/^(\:)//) {
-        return $self->symbdef(colon => $1);
+        return $self->elem(colon => $1);
     }
     elsif ($self->{src} =~ s/^(\,)//) {
-        return $self->symbdef(comma => $1);
+        return $self->elem(comma => $1);
     }
     elsif ($self->{src} =~ s/^(\?)//) {
-        return $self->symbdef(what => $1);
+        return $self->elem(what => $1);
     }
     elsif ($self->{src} =~ s/^(\;)//) {
-        return $self->symbdef(term => $1);
+        return $self->elem(term => $1);
     }
     elsif ($self->{src} =~ s/^([\'\"\`])//) {
-        return $self->symb_quote($1);
+        return $self->quote($1);
     }
     elsif ($self->{src} =~ s/^([\<\{\[\(])//) {
         my $beg = $1;
@@ -116,8 +154,8 @@ sub symb {
             $beg eq '(' ? ')' :
             $beg eq '<' ? '>' :
             $beg eq '[' ? ']' : '';
-        my @def = $self->symbdef(block => $beg);
-        my $symb = $self->symb_inner({@def}, $end) || return;
+        my @def = $self->elem(block => $beg);
+        my $symb = $self->inner({@def}, $end) || return;
 
         return
             @def,
@@ -131,19 +169,19 @@ sub symb {
     return $self->err('Unknow symbol: %s...', $s);
 }
 
-sub symb_dig {
+sub dig {
     my $self = shift;
 
     my @r;
     if ($self->{src} =~ s/^(0x[\da-fA-F]+)//) {
-        @r = $self->symbdef(dighex => $1);
+        @r = $self->elem(dighex => $1);
     }
     elsif ($self->{src} =~ s/^([01]+b)//) {
-        @r = $self->symbdef(digbin => $1);
+        @r = $self->elem(digbin => $1);
     }
     elsif ($self->{src} =~ s/^(\d*(\.\d+)?)//) {
         my $type = $2 ? 'float' : 'digint';
-        @r = $self->symbdef($type => $1);
+        @r = $self->elem($type => $1);
     }
     else {
         return $self->err('Unknow dig symbol');
@@ -156,21 +194,21 @@ sub symb_dig {
     return @r;
 }
 
-sub symb_op {
+sub op {
     my $self = shift;
 
     my @r;
     if ($self->{src} =~ s/^([\!\=]=)//) {
-        @r = $self->symbdef(opeq => $1);
+        @r = $self->elem(opeq => $1);
     }
     elsif ($self->{src} =~ s/^([\<\>]=?)//) {
-        @r = $self->symbdef(opcmp => $1);
+        @r = $self->elem(opcmp => $1);
     }
     elsif ($self->{src} =~ s/^([\-\+\*\/]?=)//) {
-        @r = $self->symbdef(opset => $1);
+        @r = $self->elem(opset => $1);
     }
     elsif ($self->{src} =~ s/^(\+\+|\-\-|[\-\+\*\/])//) {
-        @r = $self->symbdef(opint => $1);
+        @r = $self->elem(opint => $1);
     }
     else {
         return $self->err('Unknow op symbol');
@@ -183,7 +221,7 @@ sub symb_op {
     return @r;
 }
 
-sub symb_quote {
+sub quote {
     my $self = shift;
     my $q = shift() || return;
 

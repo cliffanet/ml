@@ -2,44 +2,23 @@ package ML::Struct;
 
 use strict;
 use warnings;
-use base 'ML::Struct::Symb';
+use ML::Struct::Symb;
 
-sub new {
-    my ($class, $src) = @_;
 
-    if (!defined($src)) {
-        $src = '';
+my $err;
+sub err { $err }
+
+sub parse {
+    shift() if $_[0] && ($_[0] eq __PACKAGE__);
+
+    undef $err;
+
+    my @symb = ML::Struct::Symb->parse(@_);
+    if (my $e = ML::Struct::Symb->err()) {
+        $err = $e;
     }
 
-    my $self = {};
-    bless $self, $class;
-
-    $self->symb_init($src) || return $self;
-
-    #if (my $root = $self->parse_root) {
-    #    $self->{root} = $root;
-    #}
-
-    return $self;
-}
-
-sub err {
-    my $self = shift;
-
-    if (@_) {
-        my $s = shift;
-
-        if (@_) {
-            $s = sprintf $s, @_;
-        }
-
-        $self->{err} = $s;
-        return;
-    }
-
-    exists( $self->{err} ) || return;
-
-    return sprintf('[row: %d, col: %d] %s', $self->{row}, $self->{col}, $self->{err});
+    return @symb;
 }
 
 1;
