@@ -180,7 +180,7 @@ sub dig {
         @r = $self->elem(digbin => $1);
     }
     elsif ($self->{src} =~ s/^(\d*(\.\d+)?)//) {
-        my $type = $2 ? 'float' : 'digint';
+        my $type = $2 ? 'digfloat' : 'digint';
         @r = $self->elem($type => $1);
     }
     else {
