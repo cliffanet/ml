@@ -63,12 +63,15 @@ sub incpos {
     return if !defined($s) || ($s eq '');
 
     while ($s ne '') {
-        if ($s =~ s/^([^\r\n]+)//) {
-            $self->{col} += length $1;
-        }
         if (($s =~ s/^\r?\n//) || ($s =~ s/^\r//)) {
             $self->{row} ++;
             $self->{col} = 1;
+        }
+        elsif ($s =~ s/^[\000-\037]//) {
+
+        }
+        elsif ($s =~ s/^.//) {
+            $self->{col}++;
         }
     }
 }
@@ -99,6 +102,7 @@ sub inner {
     while ($self->{src} ne '') {
         if ($end && (substr($self->{src}, 0, length($end)) eq $end)) {
             substr($self->{src}, 0, length($end)) = '';
+            $self->{col} ++;
             return [@symb];
         }
 
